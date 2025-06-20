@@ -4,48 +4,61 @@ on:
   push:
     branches:
       - ksu-next-susfs
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout kernel source
       uses: actions/checkout@v4
       with:
-        submodules: recursive
+        submodules: false  # Disable broken mkbootimg submodule
 
-    - name: Install dependencies
+    - name: Set up dependencies
       run: |
         sudo apt update
-        sudo apt install -y bc cpio curl gcc git lz4 make python3 python3-pip fakeroot liblz4-tool
+        sudo apt install -y bc bison build-essential cpio curl \
+          flex git kmod libssl-dev libelf-dev libncurses-dev \
+          lz4 python3 python3-pip unzip zip ccache
+
         pip install setuptools
 
-    - name: Set up toolchain (Clang r487747c)
+    - name: Download and extract prebuilt Clang toolchain
       run: |
         mkdir -p ~/toolchains
         cd ~/toolchains
-        curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
-        tar -xf clang-r487747c.tar.gz
-        echo "CLANG_PATH=$HOME/toolchains" >> $GITHUB_ENV
-        echo "$HOME/toolchains/bin" >> $GITHUB_PATH
+        wget https://github.com/arter97/llvm-toolchain/releases/download/20240609/clang-r450784b.tar.xz
+        tar -xf clang-r450784b.tar.xz
+        echo "TOOLCHAIN_DIR=$HOME/toolchains/clang-r450784b" >> $GITHUB_ENV
 
-    - name: Clone mkbootimg (if not submodule)
+    - name: Clone mkbootimg from osm0sis
       run: |
-        if [ ! -f mkbootimg/mkbootimg.py ]; then
-          rm -rf mkbootimg
-          git clone https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
-        fi
+        git clone https://github.com/osm0sis/mkbootimg.git mkbootimg
 
-    - name: Build Kernel
+    - name: Set up environment variables
       run: |
-        chmod +x ./build_kernel.sh
+        echo "PATH=$TOOLCHAIN_DIR/bin:$PATH" >> $GITHUB_ENV
+        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+
+    - name: Build kernel
+      env:
+        ARCH: arm64
+        SUBARCH: arm64
+        CROSS_COMPILE: aarch64-linux-gnu-
+        PATH: ${{ env.TOOLCHAIN_DIR }}/bin:${{ env.PATH }}
+        CCACHE: 1
+      run: |
+        chmod +x build_kernel.sh
         ./build_kernel.sh
 
-    - name: Upload to GitHub Release
+    - name: Upload to GitHub Releases
       uses: softprops/action-gh-release@v2
       with:
+        name: "Kernel Build - ${{ github.sha }}"
+        tag_name: "build-${{ github.run_number }}"
         files: |
           boot.img
           arter97-kernel-*-kernelsu-boot.img
