@@ -1,8 +1,9 @@
-name: Build Kernel
+name: Kernel Build
 
 on:
   push:
-    branches: [ ksu-next-susfs ]
+    branches:
+      - ksu-next-susfs
   workflow_dispatch:
 
 jobs:
@@ -10,44 +11,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
+    - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-    - name: Set up dependencies
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y bc bison cpio curl flex git libssl-dev libncurses-dev python3 python3-pip lz4 fakeroot build-essential
+        sudo apt install -y bc cpio curl gcc git lz4 make python3 python3-pip fakeroot liblz4-tool
+        pip install setuptools
 
-    - name: Set up toolchain
+    - name: Set up toolchain (Clang r487747c)
       run: |
         mkdir -p ~/toolchains
         cd ~/toolchains
-        curl -LO https://github.com/ClangBuiltLinux/llvm-project/releases/download/20.1.4/clang+llvm-20.1.4-x86_64-linux-gnu.tar.xz
-        tar -xf clang+llvm-20.1.4-x86_64-linux-gnu.tar.xz
-        echo "TOOLCHAIN=$HOME/toolchains/clang+llvm-20.1.4-x86_64-linux-gnu" >> $GITHUB_ENV
-        echo "PATH=$HOME/toolchains/clang+llvm-20.1.4-x86_64-linux-gnu/bin:$PATH" >> $GITHUB_ENV
+        curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
+        tar -xf clang-r487747c.tar.gz
+        echo "CLANG_PATH=$HOME/toolchains" >> $GITHUB_ENV
+        echo "$HOME/toolchains/bin" >> $GITHUB_PATH
 
-    - name: Download mkbootimg from AOSP
+    - name: Clone mkbootimg (if not submodule)
       run: |
-        rm -rf mkbootimg
-        mkdir mkbootimg
-        curl -s "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main?format=TEXT" \
-        | base64 -d \
-        | tar -x --strip-components=1 -C mkbootimg
-        chmod +x mkbootimg/*.py
+        if [ ! -f mkbootimg/mkbootimg.py ]; then
+          rm -rf mkbootimg
+          git clone https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
+        fi
 
-    - name: Run build script
-      env:
-        PATH: ${{ env.TOOLCHAIN }}/bin:${{ env.PATH }}
+    - name: Build Kernel
       run: |
-        chmod +x build_kernel.sh
+        chmod +x ./build_kernel.sh
         ./build_kernel.sh
 
-    - name: Upload boot.img to GitHub Releases
-      uses: ncipollo/release-action@v1
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v2
       with:
-        artifacts: "boot.img"
-        tag: "autobuild-${{ github.run_number }}"
-        name: "Auto Build ${{ github.run_number }}"
-        allowUpdates: true
-        token: ${{ secrets.GITHUB_TOKEN }}
+        files: |
+          boot.img
+          arter97-kernel-*-kernelsu-boot.img
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
