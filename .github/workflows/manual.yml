@@ -1,60 +1,53 @@
-name: Kernel Build and Release
+name: Build Kernel
 
 on:
   push:
-    branches:
-      - ksu-next-susfs
+    branches: [ ksu-next-susfs ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Kernel
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      - name: Set up Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            lz4 cpio fakeroot bc bison flex libssl-dev \
-            build-essential python3 python3-pip ccache wget tar
-          pip3 install --upgrade setuptools
+    - name: Set up dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison cpio curl flex git libssl-dev libncurses-dev python3 python3-pip lz4 fakeroot build-essential
 
-      - name: Download Neutron Clang Toolchain
-        run: |
-          mkdir -p ~/toolchains
-          cd ~/toolchains
-          wget -q https://github.com/Neutron-Toolchains/clang-builds/releases/download/20240606/neutron-clang-20240606.tar.xz
-          tar -xf neutron-clang-20240606.tar.xz
-          echo "CLANG_PATH=$HOME/toolchains/neutron-clang" >> $GITHUB_ENV
+    - name: Set up toolchain
+      run: |
+        mkdir -p ~/toolchains
+        cd ~/toolchains
+        curl -LO https://github.com/ClangBuiltLinux/llvm-project/releases/download/20.1.4/clang+llvm-20.1.4-x86_64-linux-gnu.tar.xz
+        tar -xf clang+llvm-20.1.4-x86_64-linux-gnu.tar.xz
+        echo "TOOLCHAIN=$HOME/toolchains/clang+llvm-20.1.4-x86_64-linux-gnu" >> $GITHUB_ENV
+        echo "PATH=$HOME/toolchains/clang+llvm-20.1.4-x86_64-linux-gnu/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Set Environment Variables
-        run: |
-          echo "PATH=$CLANG_PATH/bin:$PATH" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "SUBARCH=arm64" >> $GITHUB_ENV
+    - name: Download mkbootimg from AOSP
+      run: |
+        rm -rf mkbootimg
+        mkdir mkbootimg
+        curl -s "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main?format=TEXT" \
+        | base64 -d \
+        | tar -x --strip-components=1 -C mkbootimg
+        chmod +x mkbootimg/*.py
 
-      - name: Make Build Script Executable
-        run: chmod +x ./build_kernel.sh
+    - name: Run build script
+      env:
+        PATH: ${{ env.TOOLCHAIN }}/bin:${{ env.PATH }}
+      run: |
+        chmod +x build_kernel.sh
+        ./build_kernel.sh
 
-      - name: Run Kernel Build Script
-        run: ./build_kernel.sh
-
-      - name: Rename & Prepare Boot Image
-        run: |
-          VERSION=$(cat version)
-          cp -f boot.img arter97-kernel-${VERSION}-kernelsu-boot.img
-
-      - name: Upload to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Kernel Build ${{ github.run_number }}
-          tag_name: build-${{ github.run_number }}
-          files: arter97-kernel-*-boot.img
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload boot.img to GitHub Releases
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "boot.img"
+        tag: "autobuild-${{ github.run_number }}"
+        name: "Auto Build ${{ github.run_number }}"
+        allowUpdates: true
+        token: ${{ secrets.GITHUB_TOKEN }}
