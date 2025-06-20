@@ -7,36 +7,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build:
     name: Build Kernel
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Dependencies
         run: |
           sudo apt update
-          sudo apt install -y lz4 cpio fakeroot bc bison flex libssl-dev python3 python3-pip
+          sudo apt install -y \
+            lz4 cpio fakeroot bc bison flex libssl-dev \
+            build-essential python3 python3-pip ccache
           pip3 install --upgrade pip
           pip3 install setuptools
 
-      - name: Make Script Executable
+      - name: Make Build Script Executable
         run: chmod +x ./build_kernel.sh
 
-      - name: Build Kernel
+      - name: Run Kernel Build Script
         run: ./build_kernel.sh
 
-      - name: Rename Output File
+      - name: Prepare Artifact for Release
         run: |
           VERSION=$(cat version)
           cp -f boot.img arter97-kernel-${VERSION}-kernelsu-boot.img
 
-      - name: Upload Release Asset
+      - name: Create GitHub Release & Upload Boot Image
         uses: softprops/action-gh-release@v2
         with:
-          name: arter97-kernel-${{ github.run_number }}
+          name: Kernel Build ${{ github.run_number }}
           tag_name: build-${{ github.run_number }}
           files: arter97-kernel-*-boot.img
         env:
