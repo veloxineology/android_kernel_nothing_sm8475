@@ -3,56 +3,52 @@ name: Kernel Build
 on:
   push:
     branches: [ksu-next-susfs]
-  pull_request:
-    branches: [ksu-next-susfs]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout kernel source
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 1
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc cpio lz4 fakeroot build-essential libssl-dev bison flex git curl wget python3
+      - name: Set up dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison build-essential ca-certificates cpio curl file flex gcc git \
+                              libncurses-dev libssl-dev lz4 lzop python3 unzip wget xz-utils \
+                              zip fakeroot libelf-dev
 
-    - name: Clone AOSP Clang toolchain
-      run: |
-        mkdir -p ~/toolchains
-        cd ~/toolchains
-        git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-        echo "TOOLCHAIN_DIR=$HOME/toolchains/linux-x86/clang-r487747c" >> $GITHUB_ENV
-        echo "$HOME/toolchains/linux-x86/clang-r487747c/bin" >> $GITHUB_PATH
+      - name: Clone Prebuilt Clang Toolchain
+        run: |
+          mkdir -p ~/toolchains
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/toolchains/clang
+          echo "CLANG_PATH=$(find ~/toolchains/clang -type d -name 'clang-*' | head -n 1)/bin" >> $GITHUB_ENV
 
-    - name: Set environment variables
-      run: |
-        echo "CROSS_COMPILE=aarch64-linux-android-" >> $GITHUB_ENV
-        echo "ARCH=arm64" >> $GITHUB_ENV
-        echo "CC=clang" >> $GITHUB_ENV
+      - name: Export Clang Path
+        run: echo "$CLANG_PATH" >> $GITHUB_PATH
 
-    - name: Make mkbootimg available
-      run: |
-        git clone --depth=1 https://github.com/osm0sis/mkbootimg.git
-        echo "$PWD/mkbootimg" >> $GITHUB_PATH
-        chmod +x mkbootimg/*.py
+      - name: Make build script executable
+        run: chmod +x build_kernel.sh
 
-    - name: Build kernel
-      run: |
-        ./build_kernel.sh
+      - name: Run Kernel Build
+        run: ./build_kernel.sh
 
-    - name: Upload kernel to GitHub Releases
-      uses: softprops/action-gh-release@v2
-      if: success()
-      with:
-        name: "Kernel Build ${{ github.run_number }}"
-        tag_name: "build-${{ github.run_number }}"
-        files: |
-          boot.img
-          arter97-kernel-*-kernelsu-boot.img
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload boot image as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-image
+          path: boot.img
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            boot.img
+            arter97-kernel-*-kernelsu-boot.img
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
