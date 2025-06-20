@@ -18,18 +18,20 @@ jobs:
       - name: Set up Dependencies
         run: |
           sudo apt update
-          sudo apt install -y lz4 cpio fakeroot bc bison flex libssl-dev \
-                              build-essential python3 python3-pip ccache wget tar
-          pip3 install setuptools
+          sudo apt install -y \
+            lz4 cpio fakeroot bc bison flex libssl-dev \
+            build-essential python3 python3-pip ccache wget tar
+          pip3 install --upgrade setuptools
 
       - name: Download Neutron Clang Toolchain
         run: |
-          mkdir -p ~/toolchains && cd ~/toolchains
+          mkdir -p ~/toolchains
+          cd ~/toolchains
           wget -q https://github.com/Neutron-Toolchains/clang-builds/releases/download/20240606/neutron-clang-20240606.tar.xz
           tar -xf neutron-clang-20240606.tar.xz
           echo "CLANG_PATH=$HOME/toolchains/neutron-clang" >> $GITHUB_ENV
 
-      - name: Export Build Environment
+      - name: Set Environment Variables
         run: |
           echo "PATH=$CLANG_PATH/bin:$PATH" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
@@ -40,7 +42,7 @@ jobs:
       - name: Make Build Script Executable
         run: chmod +x ./build_kernel.sh
 
-      - name: Build Kernel
+      - name: Run Kernel Build Script
         run: ./build_kernel.sh
 
       - name: Rename & Prepare Boot Image
